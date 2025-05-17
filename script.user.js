@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Twitch - Force desired quality, unmute, exit fullscreen (with persistence + crash detector)
+// @name         Twitch - Force desired quality, unmute, exit fullscreen (with persistence)
 // @namespace    @USER
 // @version      1.18.0
 // @description  Força qualidade, desmuta, sai do fullscreen, persiste qualidade e reinicia player se travado > 5s
