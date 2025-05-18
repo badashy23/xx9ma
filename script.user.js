@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         XTwitch - Force desired quality, unmute, exit fullscreen (with persistence)
+// @name         XXTwitch - Force desired quality, unmute, exit fullscreen (with persistence)
 // @namespace    @USER
-// @version      1.18.0
+// @version      1.18.3
 // @description  Forces Twitch stream to chosen quality, unmutes, exits fullscreen, tricks visibility API, and persists quality choice in localStorage
 // @author       @USER
 // @match        https://www.twitch.tv/*
@@ -12,17 +12,17 @@
 // ==/UserScript==
 
 const doOnlySetting = false;
-const STORAGE_KEY   = 'twitchDesiredQuality';
+const STORAGE_KEY = 'twitchDesiredQuality';
 const TIMESTAMP_KEY = 's-qs-ts';
-const QUALITY_KEY   = 'video-quality';
+const QUALITY_KEY = 'video-quality';
 
 (function () {
     'use strict';
 
     if (!doOnlySetting) {
-        Object.defineProperty(document, 'visibilityState',      { value: 'visible', writable: false });
+        Object.defineProperty(document, 'visibilityState', { value: 'visible', writable: false });
         Object.defineProperty(document, 'webkitVisibilityState', { value: 'visible', writable: false });
-        // document.hasFocus = () => true; // >>> REMOVIDO
+        document.hasFocus = () => true;
         const initialHidden = document.hidden;
         let didInitialPlay = false;
         document.addEventListener('visibilitychange', e => {
@@ -47,9 +47,9 @@ const QUALITY_KEY   = 'video-quality';
     window.addEventListener('popstate', () => setQualitySettings(localStorage.getItem(STORAGE_KEY)));
 
     let desiredGroup = stored;
-    let playerCore   = null;
-    let lastEnforce  = 0;
-    let ready        = false;
+    let playerCore = null;
+    let lastEnforce = 0;
+    let ready = false;
 
     function simulateClick() {
         const target = document.querySelector('[data-a-target="stream-title"]');
@@ -93,7 +93,9 @@ const QUALITY_KEY   = 'video-quality';
             console.error('[TwitchScript] enforce error', e);
         }
 
-        if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+        if (document.fullscreenElement) {
+            document.exitFullscreen?.().catch(() => {});
+        }
     }
 
     function attachListeners(core) {
@@ -109,54 +111,90 @@ const QUALITY_KEY   = 'video-quality';
 
         let node = cont[key];
         for (let i = 0; node && i < 50; i++) {
-            if (node.memoizedProps?.mediaPlayerInstance?.core) return node.memoizedProps.mediaPlayerInstance.core;
+            if (node.memoizedProps?.mediaPlayerInstance?.core) {
+                return node.memoizedProps.mediaPlayerInstance.core;
+            }
             node = node.return;
         }
         return null;
     }
 
-    // >>> Atualizado: monitora 'Buffering' e 'Ready' > 5s e reinicia o player com pause/play
     function startBufferingWatcher(core) {
         let problemSince = 0;
-        let warned = false;
+        let crashHandled = false;
         let originalTitle = document.title;
+
+        function showUserPresenceButton(onConfirm, timeout = 60000) {
+            if (document.getElementById('twitch-user-confirm')) return;
+
+            const btn = document.createElement('button');
+            btn.id = 'twitch-user-confirm';
+            btn.innerText = 'Estou aqui!';
+            Object.assign(btn.style, {
+                position: 'fixed',
+                bottom: '20px',
+                right: '20px',
+                zIndex: 99999,
+                padding: '10px 20px',
+                fontSize: '16px',
+                backgroundColor: '#9146FF',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                boxShadow: '0 0 10px rgba(0,0,0,0.5)',
+            });
+
+            document.body.appendChild(btn);
+
+            const timeoutId = setTimeout(() => {
+                btn.remove();
+                location.reload();
+            }, timeout);
+
+            btn.addEventListener('click', () => {
+                clearTimeout(timeoutId);
+                btn.remove();
+                onConfirm?.();
+            });
+        }
 
         setInterval(() => {
             const state = core?.state?.state || core?._state?.machine?._currentState;
-            if (state === 'Buffering' || state === 'Ready') {
+
+            if (['Buffering', 'Ready', 'Idle'].includes(state)) {
                 if (!problemSince) problemSince = Date.now();
-                if (!warned && Date.now() - problemSince >= 5000) {
-                    console.error(`[TwitchScript] Player problem detected (state: ${state} > 5s)`);
 
-                    // >>> ALTERADO: salva título e marca como (muted)
-                    originalTitle = document.title.replace(' (muted)', '');
-                    document.title = originalTitle + ' (muted)';
+                const timeElapsed = Date.now() - problemSince;
+                if (!crashHandled && timeElapsed >= 10000) {
+                    crashHandled = true;
+                    console.error(`[TwitchScript] Player problem detected (state: ${state} > 5s) – crashed`);
 
-                    // Espera foco real da aba
-                    const waitForFocus = setInterval(() => {
-                        if (document.visibilityState === 'visible' && document.hasFocus()) {
-                            clearInterval(waitForFocus);
+                    originalTitle = document.title.replace(' (crashed)', '');
+                    document.title = `${originalTitle} (crashed)`;
+                    document.hasFocus = () => false;
 
-                            try {
-                                core.pause?.();
-                                setTimeout(() => {
-                                    core.play?.();
-                                    // Remove tag do título
-                                    document.title = originalTitle;
-                                }, 500);
-                            } catch (e) {
-                                console.warn('[TwitchScript] Falha ao reiniciar player após foco:', e);
+                    showUserPresenceButton(() => {
+                        try {
+                            core.pause?.();
+                            if (core.isMuted?.()) {
+                                core.setMuted?.(false);
+                                const newVol = +(Math.random() * 0.8 + 0.1).toFixed(2);
+                                core.setVolume?.(newVol);
                             }
-
-                            warned = true;
+                            setTimeout(() => {
+                                core.play?.();
+                                document.title = originalTitle;
+                            }, 500);
+                        } catch (e) {
+                            console.warn('[TwitchScript] Erro ao tentar reiniciar o player após foco:', e);
                         }
-                    }, 500);
-                    // <<<
+                    });
                 }
             } else {
                 problemSince = 0;
-                warned = false;
-                document.title = originalTitle; // limpa caso volte ao normal
+                crashHandled = false;
+                document.title = originalTitle;
             }
         }, 1000);
     }
