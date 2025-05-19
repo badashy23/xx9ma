@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         XXTwitch - Force desired quality, unmute, exit fullscreen (with persistence)
 // @namespace    @USER
-// @version      1.18.3
+// @version      1.18.4
 // @description  Forces Twitch stream to chosen quality, unmutes, exits fullscreen, tricks visibility API, and persists quality choice in localStorage
 // @author       @USER
 // @match        https://www.twitch.tv/*
@@ -123,9 +123,14 @@ const QUALITY_KEY = 'video-quality';
         let problemSince = 0;
         let crashHandled = false;
         let originalTitle = document.title;
+        let watcherActive = true; // Flag to control if we should continue checking
+        let watcherInterval = null;
 
         function showUserPresenceButton(onConfirm, timeout = 60000) {
             if (document.getElementById('twitch-user-confirm')) return;
+
+            // Stop the watcher while the button is active
+            watcherActive = false;
 
             const btn = document.createElement('button');
             btn.id = 'twitch-user-confirm';
@@ -155,11 +160,18 @@ const QUALITY_KEY = 'video-quality';
             btn.addEventListener('click', () => {
                 clearTimeout(timeoutId);
                 btn.remove();
+                // Resume the watcher
+                watcherActive = true;
+                problemSince = 0;
+                crashHandled = false;
                 onConfirm?.();
             });
         }
 
-        setInterval(() => {
+        watcherInterval = setInterval(() => {
+            // Only check if the watcher is active
+            if (!watcherActive) return;
+            
             const state = core?.state?.state || core?._state?.machine?._currentState;
 
             if (['Buffering', 'Ready', 'Idle'].includes(state)) {
@@ -168,11 +180,10 @@ const QUALITY_KEY = 'video-quality';
                 const timeElapsed = Date.now() - problemSince;
                 if (!crashHandled && timeElapsed >= 10000) {
                     crashHandled = true;
-                    console.error(`[TwitchScript] Player problem detected (state: ${state} > 5s) – crashed`);
+                    console.error(`[TwitchScript] Player problem detected (state: ${state} > 10s) – crashed`);
 
                     originalTitle = document.title.replace(' (crashed)', '');
                     document.title = `${originalTitle} (crashed)`;
-                    document.hasFocus = () => false;
 
                     showUserPresenceButton(() => {
                         try {
@@ -197,6 +208,13 @@ const QUALITY_KEY = 'video-quality';
                 document.title = originalTitle;
             }
         }, 1000);
+
+        // Clean up interval when page unloads
+        window.addEventListener('beforeunload', () => {
+            if (watcherInterval) {
+                clearInterval(watcherInterval);
+            }
+        });
     }
 
     function init() {
