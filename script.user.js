@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         XXTwitch - Force desired quality, unmute, exit fullscreen (with persistence)
 // @namespace    @USER
-// @version      1.18.4
+// @version      1.18.5
 // @description  Forces Twitch stream to chosen quality, unmutes, exits fullscreen, tricks visibility API, and persists quality choice in localStorage
 // @author       @USER
 // @match        https://www.twitch.tv/*
@@ -50,11 +50,7 @@ const QUALITY_KEY = 'video-quality';
     let playerCore = null;
     let lastEnforce = 0;
     let ready = false;
-
-    function simulateClick() {
-        const target = document.querySelector('[data-a-target="stream-title"]');
-        if (target) target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    }
+    let bufferingWatcherStarted = false;
 
     function persistQuality(group) {
         if (!group?.includes('160p')) return;
@@ -70,6 +66,14 @@ const QUALITY_KEY = 'video-quality';
         lastEnforce = now;
 
         try {
+            const state = playerCore?.state?.state || playerCore?._state?.machine?._currentState;
+            const problematicStates = ['Buffering', 'Ready', 'Idle'];
+
+            if (problematicStates.includes(state) && !bufferingWatcherStarted) {
+                startBufferingWatcher(playerCore);
+                bufferingWatcherStarted = true;
+            }
+
             const qualities = playerCore.getQualities?.() || [];
             if (qualities.length) {
                 const lowest = qualities[qualities.length - 1];
@@ -100,7 +104,6 @@ const QUALITY_KEY = 'video-quality';
 
     function attachListeners(core) {
         ['PlayerMutedChanged', 'Playing', 'Idle'].forEach(evt => core.addEventListener(evt, enforceSettings));
-        startBufferingWatcher(core);
     }
 
     function findCore() {
@@ -123,13 +126,11 @@ const QUALITY_KEY = 'video-quality';
         let problemSince = 0;
         let crashHandled = false;
         let originalTitle = document.title;
-        let watcherActive = true; // Flag to control if we should continue checking
+        let watcherActive = true;
         let watcherInterval = null;
 
         function showUserPresenceButton(onConfirm, timeout = 60000) {
             if (document.getElementById('twitch-user-confirm')) return;
-
-            // Stop the watcher while the button is active
             watcherActive = false;
 
             const btn = document.createElement('button');
@@ -151,6 +152,7 @@ const QUALITY_KEY = 'video-quality';
             });
 
             document.body.appendChild(btn);
+            clearInterval(watcherInterval);
 
             const timeoutId = setTimeout(() => {
                 btn.remove();
@@ -160,18 +162,17 @@ const QUALITY_KEY = 'video-quality';
             btn.addEventListener('click', () => {
                 clearTimeout(timeoutId);
                 btn.remove();
-                // Resume the watcher
                 watcherActive = true;
                 problemSince = 0;
                 crashHandled = false;
+                bufferingWatcherStarted = false;
                 onConfirm?.();
             });
         }
 
         watcherInterval = setInterval(() => {
-            // Only check if the watcher is active
             if (!watcherActive) return;
-            
+
             const state = core?.state?.state || core?._state?.machine?._currentState;
 
             if (['Buffering', 'Ready', 'Idle'].includes(state)) {
@@ -209,7 +210,6 @@ const QUALITY_KEY = 'video-quality';
             }
         }, 1000);
 
-        // Clean up interval when page unloads
         window.addEventListener('beforeunload', () => {
             if (watcherInterval) {
                 clearInterval(watcherInterval);
@@ -219,12 +219,11 @@ const QUALITY_KEY = 'video-quality';
 
     function init() {
         setTimeout(() => {
-            simulateClick();
             playerCore = findCore();
             if (playerCore) attachListeners(playerCore);
             ready = true;
             enforceSettings();
-        }, 5000);
+        }, 2000);
     }
 
     document.addEventListener('DOMContentLoaded', init);
