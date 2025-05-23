@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         XXTwitch - Force desired quality, unmute, exit fullscreen (with persistence)
 // @namespace    @USER
-// @version      1.18.5
+// @version      1.18.7
 // @description  Forces Twitch stream to chosen quality, unmutes, exits fullscreen, tricks visibility API, and persists quality choice in localStorage
 // @author       @USER
 // @match        https://www.twitch.tv/*
@@ -23,6 +23,7 @@ const QUALITY_KEY = 'video-quality';
         Object.defineProperty(document, 'visibilityState', { value: 'visible', writable: false });
         Object.defineProperty(document, 'webkitVisibilityState', { value: 'visible', writable: false });
         document.hasFocus = () => true;
+
         const initialHidden = document.hidden;
         let didInitialPlay = false;
         document.addEventListener('visibilitychange', e => {
@@ -44,13 +45,24 @@ const QUALITY_KEY = 'video-quality';
 
     const stored = localStorage.getItem(STORAGE_KEY);
     setQualitySettings(stored);
-    window.addEventListener('popstate', () => setQualitySettings(localStorage.getItem(STORAGE_KEY)));
+
+    window.addEventListener('popstate', () => {
+        setQualitySettings(localStorage.getItem(STORAGE_KEY));
+        cleanupWatcher();
+    });
 
     let desiredGroup = stored;
     let playerCore = null;
     let lastEnforce = 0;
     let ready = false;
     let bufferingWatcherStarted = false;
+
+    let watcherInterval = null;
+    let watcherActive = true;
+    let originalTitle = document.title;
+
+    let timeoutId = null;
+    let userPresenceButton = null;
 
     function persistQuality(group) {
         if (!group?.includes('160p')) return;
@@ -125,12 +137,12 @@ const QUALITY_KEY = 'video-quality';
     function startBufferingWatcher(core) {
         let problemSince = 0;
         let crashHandled = false;
-        let originalTitle = document.title;
-        let watcherActive = true;
-        let watcherInterval = null;
+        originalTitle = document.title;
+        watcherActive = true;
 
         function showUserPresenceButton(onConfirm, timeout = 60000) {
-            if (document.getElementById('twitch-user-confirm')) return;
+            if (userPresenceButton) return;
+
             watcherActive = false;
 
             const btn = document.createElement('button');
@@ -152,20 +164,19 @@ const QUALITY_KEY = 'video-quality';
             });
 
             document.body.appendChild(btn);
+            userPresenceButton = btn;
+
             clearInterval(watcherInterval);
 
-            const timeoutId = setTimeout(() => {
-                btn.remove();
+            timeoutId = setTimeout(() => {
+                cleanupWatcher();
                 location.reload();
             }, timeout);
 
             btn.addEventListener('click', () => {
                 clearTimeout(timeoutId);
-                btn.remove();
-                watcherActive = true;
-                problemSince = 0;
-                crashHandled = false;
-                bufferingWatcherStarted = false;
+                timeoutId = null;
+                cleanupWatcher();
                 onConfirm?.();
             });
         }
@@ -196,7 +207,7 @@ const QUALITY_KEY = 'video-quality';
                             }
                             setTimeout(() => {
                                 core.play?.();
-                                document.title = originalTitle;
+                                removeCrashedTitle();
                             }, 500);
                         } catch (e) {
                             console.warn('[TwitchScript] Erro ao tentar reiniciar o player após foco:', e);
@@ -206,15 +217,37 @@ const QUALITY_KEY = 'video-quality';
             } else {
                 problemSince = 0;
                 crashHandled = false;
-                document.title = originalTitle;
+                removeCrashedTitle();
             }
         }, 1000);
 
         window.addEventListener('beforeunload', () => {
-            if (watcherInterval) {
-                clearInterval(watcherInterval);
-            }
+            cleanupWatcher();
         });
+    }
+
+    function removeCrashedTitle() {
+        if (document.title.endsWith(' (crashed)')) {
+            document.title = document.title.replace(/ \(crashed\)$/, '');
+        }
+    }
+
+    function cleanupWatcher() {
+        if (watcherInterval) {
+            clearInterval(watcherInterval);
+            watcherInterval = null;
+        }
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+        }
+        if (userPresenceButton) {
+            userPresenceButton.remove();
+            userPresenceButton = null;
+        }
+        bufferingWatcherStarted = false;
+        watcherActive = false;
+        removeCrashedTitle();
     }
 
     function init() {
@@ -227,6 +260,7 @@ const QUALITY_KEY = 'video-quality';
     }
 
     document.addEventListener('DOMContentLoaded', init);
+
     const poll = setInterval(() => {
         if (!playerCore) init();
         else clearInterval(poll);
