@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         XXTwitch - Force desired quality, unmute, exit fullscreen (with persistence)
 // @namespace    @USER
-// @version      1.18.7
+// @version      1.18.9
 // @description  Forces Twitch stream to chosen quality, unmutes, exits fullscreen, tricks visibility API, and persists quality choice in localStorage
 // @author       @USER
 // @match        https://www.twitch.tv/*
