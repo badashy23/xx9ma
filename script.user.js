@@ -49,6 +49,20 @@ const QUALITY_KEY = 'video-quality';
     window.addEventListener('popstate', () => {
         setQualitySettings(localStorage.getItem(STORAGE_KEY));
         cleanupWatcher();
+
+        const core = findCore();
+        if (core) {
+            if (core.isMuted?.()) {
+                core.setMuted?.(false);
+                const newVol = +(Math.random() * 0.8 + 0.1).toFixed(2);
+                core.setVolume?.(newVol);
+            }
+            const qualities = core.getQualities?.() || [];
+            if (qualities.length) {
+                const match = qualities.find(q => q.group === stored);
+                if (match) core.setQuality?.(match);
+            }
+        }
     });
 
     let desiredGroup = stored;
@@ -103,7 +117,12 @@ const QUALITY_KEY = 'video-quality';
                 }
             }
 
-            if (playerCore.isMuted?.()) playerCore.setMuted(false);
+            if (playerCore.isMuted?.()) {
+                playerCore.setMuted?.(false);
+                const newVol = +(Math.random() * 0.8 + 0.1).toFixed(2);
+                playerCore.setVolume?.(newVol);
+            }
+
             if (playerCore.isPaused?.()) playerCore.play?.();
         } catch (e) {
             console.error('[TwitchScript] enforce error', e);
