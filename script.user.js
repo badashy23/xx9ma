@@ -53,10 +53,12 @@ const QUALITY_KEY = 'video-quality';
         const core = findCore();
         if (core) {
             if (core.isMuted?.()) {
-                core.setMuted?.(false);
+                core.setMuted(false);
                 const newVol = +(Math.random() * 0.8 + 0.1).toFixed(2);
-                core.setVolume?.(newVol);
+                core.setVolume(newVol);
+                console.log(`[TwitchScript] Desmutado (popstate) com volume ${newVol}`);
             }
+
             const qualities = core.getQualities?.() || [];
             if (qualities.length) {
                 const match = qualities.find(q => q.group === stored);
@@ -118,9 +120,10 @@ const QUALITY_KEY = 'video-quality';
             }
 
             if (playerCore.isMuted?.()) {
-                playerCore.setMuted?.(false);
+                playerCore.setMuted(false);
                 const newVol = +(Math.random() * 0.8 + 0.1).toFixed(2);
-                playerCore.setVolume?.(newVol);
+                playerCore.setVolume(newVol);
+                console.log(`[TwitchScript] Desmutado (enforce) com volume ${newVol}`);
             }
 
             if (playerCore.isPaused?.()) playerCore.play?.();
@@ -196,7 +199,22 @@ const QUALITY_KEY = 'video-quality';
                 clearTimeout(timeoutId);
                 timeoutId = null;
                 cleanupWatcher();
-                onConfirm?.();
+
+                try {
+                    core.pause?.();
+                    if (core.isMuted?.()) {
+                        core.setMuted(false);
+                        const newVol = +(Math.random() * 0.8 + 0.1).toFixed(2);
+                        core.setVolume(newVol);
+                        console.log(`[TwitchScript] Desmutado (user click) com volume ${newVol}`);
+                    }
+                    setTimeout(() => {
+                        core.play?.();
+                        removeCrashedTitle();
+                    }, 500);
+                } catch (e) {
+                    console.warn('[TwitchScript] Erro ao tentar reiniciar o player após foco:', e);
+                }
             });
         }
 
@@ -216,22 +234,7 @@ const QUALITY_KEY = 'video-quality';
                     originalTitle = document.title.replace(' (crashed)', '');
                     document.title = `${originalTitle} (crashed)`;
 
-                    showUserPresenceButton(() => {
-                        try {
-                            core.pause?.();
-                            if (core.isMuted?.()) {
-                                core.setMuted?.(false);
-                                const newVol = +(Math.random() * 0.8 + 0.1).toFixed(2);
-                                core.setVolume?.(newVol);
-                            }
-                            setTimeout(() => {
-                                core.play?.();
-                                removeCrashedTitle();
-                            }, 500);
-                        } catch (e) {
-                            console.warn('[TwitchScript] Erro ao tentar reiniciar o player após foco:', e);
-                        }
-                    });
+                    showUserPresenceButton();
                 }
             } else {
                 problemSince = 0;
