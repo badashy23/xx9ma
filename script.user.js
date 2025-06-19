@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         XXTwitch - Force desired quality, unmute, exit fullscreen (with persistence)
 // @namespace    @USER
-// @version      1.18.9
+// @version      1.18.10
 // @description  Forces Twitch stream to chosen quality, unmutes, exits fullscreen, tricks visibility API, and persists quality choice in localStorage
 // @author       @USER
 // @match        https://www.twitch.tv/*
@@ -52,17 +52,19 @@ const QUALITY_KEY = 'video-quality';
 
         const core = findCore();
         if (core) {
+            const qualities = core.getQualities?.() || [];
+            if (qualities.length) {
+                const match = qualities.find(q => q.group === stored);
+                if (match) {
+                    core.setQuality?.(match);
+                }
+            }
+
             if (core.isMuted?.()) {
                 core.setMuted(false);
                 const newVol = +(Math.random() * 0.8 + 0.1).toFixed(2);
                 core.setVolume(newVol);
                 console.log(`[TwitchScript] Desmutado (popstate) com volume ${newVol}`);
-            }
-
-            const qualities = core.getQualities?.() || [];
-            if (qualities.length) {
-                const match = qualities.find(q => q.group === stored);
-                if (match) core.setQuality?.(match);
             }
         }
     });
@@ -202,12 +204,14 @@ const QUALITY_KEY = 'video-quality';
 
                 try {
                     core.pause?.();
+
                     if (core.isMuted?.()) {
                         core.setMuted(false);
                         const newVol = +(Math.random() * 0.8 + 0.1).toFixed(2);
                         core.setVolume(newVol);
                         console.log(`[TwitchScript] Desmutado (user click) com volume ${newVol}`);
                     }
+
                     setTimeout(() => {
                         core.play?.();
                         removeCrashedTitle();
